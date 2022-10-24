@@ -1,5 +1,5 @@
 {
-  description = "srid/haskell-template: Nix template for Haskell projects";
+  description = "srid/hs2048: Nix template for Haskell projects";
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
     flake-parts.url = "github:hercules-ci/flake-parts";
@@ -21,10 +21,19 @@
           buildTools = hp: {
             inherit (pkgs)
               treefmt;
+              
           } // config.treefmt.formatters;
           # overrides = self: super: {}
           hlsCheck.enable = true;
           hlintCheck.enable = true;
+        
+
+          #haskellPackages = pkgs.haskellPackages.override {
+          #  overrides = self: super: rec {
+          #    MonadRandom = pkgs.haskell.lib.dontCheck
+          #      (self.callHackage "MonadRandom" "0.5.3" { });
+          #  };
+          #};
         };
         treefmt.formatters = {
           inherit (pkgs)
