@@ -30,36 +30,6 @@ placeTile tile (row, column) grid = beforeTileRow ++ [tileRow] ++ afterTileRow
     beforeTileColumn = take column (grid !! row)
     afterTileColumn = drop (column + 1) (grid !! row)
 
--- Display the 4x4 grid in the terminal
-displayGrid :: Grid -> IO ()
-displayGrid grid =
-  "┌────┬────┬────┬────┐\n"
-    ++ "│"
-    ++ intercalate "│" (map displayTile (grid !! 0))
-    ++ "│\n"
-    ++ "├────┼────┼────┼────┤\n"
-    ++ "│"
-    ++ intercalate "│" (map displayTile (grid !! 1))
-    ++ "│\n"
-    ++ "├────┼────┼────┼────┤\n"
-    ++ "│"
-    ++ intercalate "│" (map displayTile (grid !! 2))
-    ++ "│\n"
-    ++ "├────┼────┼────┼────┤\n"
-    ++ "│"
-    ++ intercalate "│" (map displayTile (grid !! 3))
-    ++ "│\n"
-    ++ "└────┴────┴────┴────┘\n"
-    & putStrLn
-
--- Display a single tile
-displayTile :: Tile -> String
-displayTile Nothing = "    "
-displayTile (Just n) = show n ++ "   " & take 4
-
-clearScreen :: IO ()
-clearScreen = putStr "\ESC[2J"
-
 -- Find all empty tiles in the grid
 findEmptyTiles :: Grid -> [(Int, Int)]
 findEmptyTiles grid = do
@@ -94,8 +64,8 @@ placeRandomTile grid = do
   return $ placeTile (Just value) position grid
 
 -- Move all tiles in a row to the right
-mergeRowLeft :: [Tile] -> [Tile]
-mergeRowLeft row = mergedRow ++ emptyRow
+mergeRowRight :: [Tile] -> [Tile]
+mergeRowRight row = emptyRow ++ mergedRow
   where
     mergedRow = foldr mergeTile [] row
     emptyRow = replicate (4 - length mergedRow) Nothing
@@ -113,14 +83,43 @@ mergeTile (Just n) (Nothing : row) = Just n : row
 move :: Move -> Grid -> IO Grid
 move move grid = do
   let newGrid = case move of
-        Up -> transpose . map mergeRowLeft . transpose $ grid
-        Down -> transpose . map (reverse . mergeRowLeft . reverse) . transpose $ grid
-        Right -> map (reverse . mergeRowLeft . reverse) grid
-        Left -> map mergeRowLeft grid
+        Up -> transpose . map (reverse . mergeRowRight . reverse) . transpose $ grid
+        Down -> transpose . map mergeRowRight . transpose $ grid
+        Right -> map mergeRowRight grid
+        Left -> map (reverse . mergeRowRight . reverse) grid
   if newGrid == grid
     then return grid
     else placeRandomTile newGrid
 
+-- Display the 4x4 grid in the terminal
+displayGrid :: Grid -> IO ()
+displayGrid grid =
+  "┌────┬────┬────┬────┐\n"
+    ++ "│"
+    ++ intercalate "│" (map displayTile (grid !! 0))
+    ++ "│\n"
+    ++ "├────┼────┼────┼────┤\n"
+    ++ "│"
+    ++ intercalate "│" (map displayTile (grid !! 1))
+    ++ "│\n"
+    ++ "├────┼────┼────┼────┤\n"
+    ++ "│"
+    ++ intercalate "│" (map displayTile (grid !! 2))
+    ++ "│\n"
+    ++ "├────┼────┼────┼────┤\n"
+    ++ "│"
+    ++ intercalate "│" (map displayTile (grid !! 3))
+    ++ "│\n"
+    ++ "└────┴────┴────┴────┘\n"
+    & putStrLn
+
+-- Display a single tile
+displayTile :: Tile -> String
+displayTile Nothing = "    "
+displayTile (Just n) = show n ++ "   " & take 4
+
+clearScreen :: IO ()
+clearScreen = putStr "\ESC[2J"
 loop :: Grid -> IO ()
 loop grid = do
   putStrLn "\n"
