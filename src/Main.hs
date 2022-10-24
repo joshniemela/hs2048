@@ -79,17 +79,38 @@ mergeTile (Just n) (Just m : row)
   | otherwise = Just n : Just m : row
 mergeTile (Just n) (Nothing : row) = Just n : row
 
+isGameOver :: Grid -> Bool
+isGameOver grid = null emptyTiles && not (canMerge grid)
+  where
+    emptyTiles = findEmptyTiles grid
+
+-- Try each merge and see if any of the grids are different to the original grid
+canMerge :: Grid -> Bool
+canMerge grid =
+  any
+    (grid /=)
+    [ map mergeRowRight grid
+    , map (reverse . mergeRowRight . reverse) grid
+    , transpose . map mergeRowRight . transpose $ grid
+    , transpose . map (reverse . mergeRowRight . reverse) . transpose $ grid
+    ]
+
 -- Move all tiles in a row to the right and place a new tile
 move :: Move -> Grid -> IO Grid
 move move grid = do
-  let newGrid = case move of
-        Up -> transpose . map (reverse . mergeRowRight . reverse) . transpose $ grid
-        Down -> transpose . map mergeRowRight . transpose $ grid
-        Right -> map mergeRowRight grid
-        Left -> map (reverse . mergeRowRight . reverse) grid
-  if newGrid == grid
-    then return grid
-    else placeRandomTile newGrid
+  if isGameOver grid
+    then do
+      print "Game over!"
+      return grid
+    else do
+      let newGrid = case move of
+            Up -> transpose . map (reverse . mergeRowRight . reverse) . transpose $ grid
+            Down -> transpose . map mergeRowRight . transpose $ grid
+            Right -> map mergeRowRight grid
+            Left -> map (reverse . mergeRowRight . reverse) grid
+      if newGrid == grid
+        then return grid
+        else placeRandomTile newGrid
 
 -- Display the 4x4 grid in the terminal
 displayGrid :: Grid -> IO ()
