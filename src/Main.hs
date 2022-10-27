@@ -1,10 +1,9 @@
 module Main where
 
 import Data.List
-import Main.Utf8 qualified as Utf8
 import System.IO (getChar, putStr)
-import System.Random (randomRIO)
-import Prelude hiding (Down, Left, Right, putStr)
+import System.Random
+import Prelude hiding (Down, Left, Right, putStr, sum)
 
 {- |
  Main entry point.
@@ -39,22 +38,18 @@ findEmptyTiles grid = do
     Nothing -> [(row, column)]
     Just _ -> []
 
--- REFACTOR THE BELOW TO BE ONE FUNCTION
-randomValue :: IO Int
-randomValue = randomRIO (1, 10)
 
-twoOrFour :: Int -> Int
-twoOrFour 1 = 4
-twoOrFour _ = 2
+-- Generate a random tile value between 2 or 4 with a 90%, 10% weight
+newTileValue :: IO Int
+newTileValue = do
+  value <- randomRIO (1, 10)::IO Int
+  return $ if value == 1 then 2 else 1
 
 chooseRandom :: [a] -> IO a
 chooseRandom xs = do
   i <- randomRIO (0, length xs - 1)
   return (xs !! i)
 
--- Random where 2 has a 90% chance of being chosen and 4 has a 10% chance
-newTileValue :: IO Int
-newTileValue = do twoOrFour <$> randomValue
 
 placeRandomTile :: Grid -> IO Grid
 placeRandomTile grid = do
@@ -75,7 +70,7 @@ mergeTile :: Tile -> [Tile] -> [Tile]
 mergeTile Nothing row = row
 mergeTile (Just n) [] = [Just n]
 mergeTile (Just n) (Just m : row)
-  | n == m = Just (n + m) : row
+  | n == m = Just (n + 1) : row
   | otherwise = Just n : Just m : row
 mergeTile (Just n) (Nothing : row) = Just n : row
 
@@ -95,15 +90,26 @@ canMerge grid =
     , transpose . map (reverse . mergeRowRight . reverse) . transpose $ grid
     ]
 
+
+-- refactor and rename
+recurrentScore :: Maybe Int -> Int
+recurrentScore Nothing = 0
+-- The additional term is to account for the randomly spawned 4s
+recurrentScore (Just n) = 2^n*(n-1)- quot (2^(n+1)) 11
+-- map reccurrentScore to each element of the grid and sum the result
+scoreGrid :: Grid -> Int
+scoreGrid grid = sum $ map (sum . map recurrentScore) grid
+
+
 -- Move all tiles in a row to the right and place a new tile
 move :: Move -> Grid -> IO Grid
-move move grid = do
+move moveOp grid = do
   if isGameOver grid
     then do
-      print "Game over!"
+      print ("Game over!":: String)
       return grid
     else do
-      let newGrid = case move of
+      let newGrid = case moveOp of
             Up -> transpose . map (reverse . mergeRowRight . reverse) . transpose $ grid
             Down -> transpose . map mergeRowRight . transpose $ grid
             Right -> map mergeRowRight grid
@@ -132,12 +138,15 @@ displayGrid grid =
     ++ intercalate "│" (map displayTile (grid !! 3))
     ++ "│\n"
     ++ "└────┴────┴────┴────┘\n"
+    ++ "Score: " ++ show (scoreGrid grid)
     & putStrLn
+
 
 -- Display a single tile
 displayTile :: Tile -> String
 displayTile Nothing = "    "
-displayTile (Just n) = show n ++ "   " & take 4
+-- Convert log 2 of a number to number, this is needed since the game uses logarithms
+displayTile (Just n) = show(2^n) ++ "   " & take 4
 
 clearScreen :: IO ()
 clearScreen = putStr "\ESC[2J"
@@ -155,11 +164,10 @@ loop grid = do
     'a' -> loop =<< move Left grid
     'd' -> loop =<< move Right grid
     _ -> loop grid
-
 main :: IO ()
 main = do
   hSetBuffering stdin NoBuffering
-  print "Welcome to 2048! Press any key to start."
+  print ("Welcome to 2048! Press any key to start.":: String)
   let grid = emptyGrid
   grid' <- placeRandomTile grid >>= placeRandomTile
 
