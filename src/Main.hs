@@ -40,14 +40,10 @@ findEmptyTiles grid = do
 
 -- Generate a random tile value between 2 or 4 with a 90%, 10% weight
 newTileValue :: IO Int
-newTileValue = do
-  value <- randomRIO (1, 10) :: IO Int
-  return $ if value == 1 then 2 else 1
+newTileValue = (randomRIO (1, 10) :: IO Int) >>= \n -> return (if n == 1 then 2 else 1)
 
 chooseRandom :: [a] -> IO a
-chooseRandom xs = do
-  i <- randomRIO (0, length xs - 1)
-  return (xs !! i)
+chooseRandom xs = randomRIO (0, length xs - 1) <&> (xs !!)
 
 placeRandomTile :: Grid -> IO Grid
 placeRandomTile grid = do
@@ -75,9 +71,7 @@ mergeTile (Just n) (Nothing : row) = Just n : row
 checkGameOver :: Grid -> IO (Maybe Grid)
 checkGameOver grid =
   if null (findEmptyTiles grid) && not (canMerge grid)
-    then do
-      putStr "Game over!"
-      return Nothing
+    then putStr "Game over!" >> return Nothing
     else return (Just grid)
 
 -- Try each merge and see if any of the grids are different to the original grid
@@ -166,7 +160,6 @@ main :: IO ()
 main = do
   hSetBuffering stdin NoBuffering
   print ("Welcome to 2048! Press any key to start." :: String)
-  let grid = emptyGrid
-  grid' <- placeRandomTile grid >>= placeRandomTile
+  grid' <- placeRandomTile emptyGrid >>= placeRandomTile
 
   loop (Just grid')
