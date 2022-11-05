@@ -38,18 +38,16 @@ findEmptyTiles grid = do
     Nothing -> [(row, column)]
     Just _ -> []
 
-
 -- Generate a random tile value between 2 or 4 with a 90%, 10% weight
 newTileValue :: IO Int
 newTileValue = do
-  value <- randomRIO (1, 10)::IO Int
+  value <- randomRIO (1, 10) :: IO Int
   return $ if value == 1 then 2 else 1
 
 chooseRandom :: [a] -> IO a
 chooseRandom xs = do
   i <- randomRIO (0, length xs - 1)
   return (xs !! i)
-
 
 placeRandomTile :: Grid -> IO Grid
 placeRandomTile grid = do
@@ -74,10 +72,13 @@ mergeTile (Just n) (Just m : row)
   | otherwise = Just n : Just m : row
 mergeTile (Just n) (Nothing : row) = Just n : row
 
-isGameOver :: Grid -> Bool
-isGameOver grid = null emptyTiles && not (canMerge grid)
-  where
-    emptyTiles = findEmptyTiles grid
+checkGameOver :: Grid -> IO (Maybe Grid)
+checkGameOver grid =
+  if null (findEmptyTiles grid) && not (canMerge grid)
+    then do
+      putStr "Game over!"
+      return Nothing
+    else return (Just grid)
 
 -- Try each merge and see if any of the grids are different to the original grid
 canMerge :: Grid -> Bool
@@ -90,33 +91,26 @@ canMerge grid =
     , transpose . map (reverse . mergeRowRight . reverse) . transpose $ grid
     ]
 
-
 -- refactor and rename
 recurrentScore :: Maybe Int -> Int
 recurrentScore Nothing = 0
 -- The additional term is to account for the randomly spawned 4s
-recurrentScore (Just n) = 2^n*(n-1)- quot (2^(n+1)) 11
+recurrentScore (Just n) = 2 ^ n * (n - 1) - quot (2 ^ (n + 1)) 11
+
 -- map reccurrentScore to each element of the grid and sum the result
 scoreGrid :: Grid -> Int
 scoreGrid grid = sum $ map (sum . map recurrentScore) grid
 
-
--- Move all tiles in a row to the right and place a new tile
-move :: Move -> Grid -> IO Grid
+move :: Move -> Grid -> IO (Maybe Grid)
 move moveOp grid = do
-  if isGameOver grid
-    then do
-      print ("Game over!":: String)
-      return grid
-    else do
-      let newGrid = case moveOp of
-            Up -> transpose . map (reverse . mergeRowRight . reverse) . transpose $ grid
-            Down -> transpose . map mergeRowRight . transpose $ grid
-            Right -> map mergeRowRight grid
-            Left -> map (reverse . mergeRowRight . reverse) grid
-      if newGrid == grid
-        then return grid
-        else placeRandomTile newGrid
+  let newGrid = case moveOp of
+        Up -> transpose . map (reverse . mergeRowRight . reverse) . transpose $ grid
+        Down -> transpose . map mergeRowRight . transpose $ grid
+        Right -> map mergeRowRight grid
+        Left -> map (reverse . mergeRowRight . reverse) grid
+  if newGrid /= grid
+    then placeRandomTile newGrid >>= checkGameOver
+    else return (Just grid)
 
 -- Display the 4x4 grid in the terminal
 displayGrid :: Grid -> IO ()
@@ -138,37 +132,41 @@ displayGrid grid =
     ++ intercalate "│" (map displayTile (grid !! 3))
     ++ "│\n"
     ++ "└────┴────┴────┴────┘\n"
-    ++ "Score: " ++ show (scoreGrid grid)
+    ++ "Score: "
+    ++ show (scoreGrid grid)
     & putStrLn
-
 
 -- Display a single tile
 displayTile :: Tile -> String
 displayTile Nothing = "    "
 -- Convert log 2 of a number to number, this is needed since the game uses logarithms
-displayTile (Just n) = show(2^n) ++ "   " & take 4
+displayTile (Just n) = show (2 ^ n) ++ "   " & take 4
 
 clearScreen :: IO ()
 clearScreen = putStr "\ESC[2J"
-loop :: Grid -> IO ()
-loop grid = do
+
+loop :: Maybe Grid -> IO ()
+loop Nothing = pass
+loop (Just grid) = do
+  clearScreen
   putStrLn "\n"
   putStrLn "--------------------------"
   displayGrid grid
   input <- getChar
-  clearScreen
 
   case input of
     'w' -> loop =<< move Up grid
     's' -> loop =<< move Down grid
     'a' -> loop =<< move Left grid
     'd' -> loop =<< move Right grid
-    _ -> loop grid
+    'q' -> putStrLn "Bye!"
+    _ -> loop (Just grid)
+
 main :: IO ()
 main = do
   hSetBuffering stdin NoBuffering
-  print ("Welcome to 2048! Press any key to start.":: String)
+  print ("Welcome to 2048! Press any key to start." :: String)
   let grid = emptyGrid
   grid' <- placeRandomTile grid >>= placeRandomTile
 
-  loop grid'
+  loop (Just grid')
