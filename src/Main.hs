@@ -46,44 +46,37 @@ chooseRandom :: [a] -> IO a
 chooseRandom xs = randomRIO (0, length xs - 1) <&> (xs !!)
 
 placeRandomTile :: Grid -> IO Grid
-placeRandomTile grid = do
-  let emptyTiles = findEmptyTiles grid
-  position <- chooseRandom emptyTiles
-  value <- newTileValue
-  return $ placeTile (Just value) position grid
+placeRandomTile grid =
+  findEmptyTiles grid
+    & chooseRandom
+    >>= \tile -> newTileValue >>= \value -> return (placeTile (Just value) tile grid)
 
--- Move all tiles in a row to the right
-mergeRowRight :: [Tile] -> [Tile]
-mergeRowRight row = emptyRow ++ mergedRow
-  where
-    mergedRow = foldr mergeTile [] row
-    emptyRow = replicate (4 - length mergedRow) Nothing
+-- Move all tiles in a row to the left
+mergeRowLeft :: [Tile] -> [Tile]
+mergeRowLeft [] = []
+mergeRowLeft (Nothing : xs) = mergeRowLeft xs ++ [Nothing]
+mergeRowLeft (Just x : Nothing : xs) = mergeRowLeft (Just x : xs) ++ [Nothing]
+mergeRowLeft (Just x : Just y : xs)
+  | x == y = Just (x + 1) : mergeRowLeft xs ++ [Nothing]
+  | otherwise = Just x : mergeRowLeft (Just y : xs)
+mergeRowLeft (Just x : xs) = Just x : mergeRowLeft xs
 
--- Merge two tiles if they are equal
-mergeTile :: Tile -> [Tile] -> [Tile]
-mergeTile Nothing row = row
-mergeTile (Just n) [] = [Just n]
-mergeTile (Just n) (Just m : row)
-  | n == m = Just (n + 1) : row
-  | otherwise = Just n : Just m : row
-mergeTile (Just n) (Nothing : row) = Just n : row
+-- Move all tiles in a direction
+moveBoard :: Move -> Grid -> Grid
+moveBoard Left = map mergeRowLeft
+moveBoard Right = map (reverse . mergeRowLeft . reverse)
+moveBoard Up = transpose . moveBoard Left . transpose
+moveBoard Down = transpose . moveBoard Right . transpose
+
+-- Try each merge and see if any of the grids are different to the original grid
+canMerge :: Grid -> Bool
+canMerge grid = any (/= grid) (map moveBoard [Up, Down, Left, Right] <*> [grid])
 
 checkGameOver :: Grid -> IO (Maybe Grid)
 checkGameOver grid =
   if null (findEmptyTiles grid) && not (canMerge grid)
     then putStr "Game over!" >> return Nothing
     else return (Just grid)
-
--- Try each merge and see if any of the grids are different to the original grid
-canMerge :: Grid -> Bool
-canMerge grid =
-  any
-    (grid /=)
-    [ map mergeRowRight grid
-    , map (reverse . mergeRowRight . reverse) grid
-    , transpose . map mergeRowRight . transpose $ grid
-    , transpose . map (reverse . mergeRowRight . reverse) . transpose $ grid
-    ]
 
 -- refactor and rename
 recurrentScore :: Maybe Int -> Int
@@ -97,11 +90,7 @@ scoreGrid grid = sum $ map (sum . map recurrentScore) grid
 
 move :: Move -> Grid -> IO (Maybe Grid)
 move moveOp grid = do
-  let newGrid = case moveOp of
-        Up -> transpose . map (reverse . mergeRowRight . reverse) . transpose $ grid
-        Down -> transpose . map mergeRowRight . transpose $ grid
-        Right -> map mergeRowRight grid
-        Left -> map (reverse . mergeRowRight . reverse) grid
+  let newGrid = moveBoard moveOp grid
   if newGrid /= grid
     then placeRandomTile newGrid >>= checkGameOver
     else return (Just grid)
