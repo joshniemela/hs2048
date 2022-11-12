@@ -84,7 +84,7 @@ recurrentScore Nothing = 0
 -- The additional term is to account for the randomly spawned 4s
 recurrentScore (Just n) = 2 ^ n * (n - 1) - quot (2 ^ (n + 1)) 11
 
--- map reccurrentScore to each element of the grid and sum the result
+-- map recurrentScore to each element of the grid and sum the result
 scoreGrid :: Grid -> Int
 scoreGrid grid = sum $ map (sum . map recurrentScore) grid
 
