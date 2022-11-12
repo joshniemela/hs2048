@@ -1,8 +1,12 @@
 module Main where
 
+import Control.Concurrent.Async
+import Data.ByteString qualified as BS
 import Data.List
+import Network.Simple.TCP
 import System.IO (getChar, putStr)
 import System.Random
+
 import Prelude hiding (Down, Left, Right, putStr, sum)
 
 {- |
@@ -19,6 +23,15 @@ data Move = Up | Down | Left | Right
 emptyGrid :: Grid
 emptyGrid = replicate 4 (replicate 4 Nothing)
 
+-- Find all empty tiles in the grid
+findEmptyTiles :: Grid -> [(Int, Int)]
+findEmptyTiles grid = do
+  (row, rowTiles) <- zip [0 ..] grid
+  (column, tile) <- zip [0 ..] rowTiles
+  case tile of
+    Nothing -> [(row, column)]
+    Just _ -> []
+
 -- Insert tile into the grid given coordinates
 placeTile :: Tile -> (Int, Int) -> Grid -> Grid
 placeTile tile (row, column) grid = beforeTileRow ++ [tileRow] ++ afterTileRow
@@ -29,27 +42,18 @@ placeTile tile (row, column) grid = beforeTileRow ++ [tileRow] ++ afterTileRow
     beforeTileColumn = take column (grid !! row)
     afterTileColumn = drop (column + 1) (grid !! row)
 
--- Find all empty tiles in the grid
-findEmptyTiles :: Grid -> [(Int, Int)]
-findEmptyTiles grid = do
-  (row, rowTiles) <- zip [0 ..] grid
-  (column, tile) <- zip [0 ..] rowTiles
-  case tile of
-    Nothing -> [(row, column)]
-    Just _ -> []
-
--- Generate a random tile value between 2 or 4 with a 90%, 10% weight
-newTileValue :: IO Int
-newTileValue = (randomRIO (1, 10) :: IO Int) >>= \n -> return (if n == 1 then 2 else 1)
-
-chooseRandom :: [a] -> IO a
-chooseRandom xs = randomRIO (0, length xs - 1) <&> (xs !!)
-
 placeRandomTile :: Grid -> IO Grid
 placeRandomTile grid =
   findEmptyTiles grid
     & chooseRandom
     >>= \tile -> newTileValue >>= \value -> return (placeTile (Just value) tile grid)
+  where
+    -- Generate a random tile value between 2 or 4 with a 90%, 10% weight
+    newTileValue :: IO Int
+    newTileValue = (randomRIO (1, 10) :: IO Int) >>= \n -> return (if n == 1 then 2 else 1)
+
+    chooseRandom :: [a] -> IO a
+    chooseRandom xs = randomRIO (0, length xs - 1) <&> (xs !!)
 
 -- Move all tiles in a row to the left
 mergeRowLeft :: [Tile] -> [Tile]
@@ -118,12 +122,12 @@ displayGrid grid =
     ++ "Score: "
     ++ show (scoreGrid grid)
     & putStrLn
-
--- Display a single tile
-displayTile :: Tile -> String
-displayTile Nothing = "    "
--- Convert log 2 of a number to number, this is needed since the game uses logarithms
-displayTile (Just n) = show (2 ^ n) ++ "   " & take 4
+  where
+    -- Display a single tile
+    displayTile :: Tile -> String
+    displayTile Nothing = "    "
+    -- Convert log 2 of a number to number, this is needed since the game uses logarithms
+    displayTile (Just n) = show (2 ^ n :: Int) ++ "   " & take 4
 
 clearScreen :: IO ()
 clearScreen = putStr "\ESC[2J"
@@ -133,7 +137,6 @@ loop Nothing = pass
 loop (Just grid) = do
   clearScreen
   putStrLn "\n"
-  putStrLn "--------------------------"
   displayGrid grid
   input <- getChar
 
@@ -145,10 +148,64 @@ loop (Just grid) = do
     'q' -> putStrLn "Bye!"
     _ -> loop (Just grid)
 
+-- Take grid which is a list of lists of tiles and convert it to a string
+encode :: Maybe Grid -> ByteString
+encode Nothing = "gameover"
+-- get the score of the grid and encode it as a string using recurrent score
+encode (Just grid) =
+  show (scoreGrid grid)
+    <> " "
+    <> BS.intercalate " " (map encodeTile (concat grid))
+  where
+    encodeTile :: Tile -> ByteString
+    encodeTile Nothing = "0"
+    encodeTile (Just n) = show n
+
+-- Variation of the loop function which is also able to connect via TCP
+socketLoop :: Maybe Grid -> Socket -> IO ()
+socketLoop Nothing _ = pass
+socketLoop (Just grid) socket = do
+  clearScreen
+  putStrLn "\n"
+  displayGrid grid
+
+  -- Get head or bytestring or get keyboard input
+  input <- race getChar (recv socket 1)
+
+  input
+    & either
+      ( \case
+          -- Keyboard input
+          'w' -> move Up grid
+          'a' -> move Left grid
+          's' -> move Down grid
+          'd' -> move Right grid
+          'q' -> putStrLn "Bye!" >> return Nothing
+          _ -> return (Just grid)
+      )
+      ( \case
+          -- TCP input
+          Just "w" -> move Up grid
+          Just "a" -> move Left grid
+          Just "s" -> move Down grid
+          Just "d" -> move Right grid
+          Just "q" -> putStrLn "Bye!" >> return Nothing
+          _ -> return (Just grid)
+      )
+    -- Write new grid and return state on socket and convert grid to bytestring
+    >>= \newGrid -> send socket (encode newGrid) >> socketLoop newGrid socket
+
+-- Read port command line argument, if not present start normal loop
 main :: IO ()
 main = do
+  args <- getArgs
   hSetBuffering stdin NoBuffering
-  print ("Welcome to 2048! Press any key to start." :: String)
-  grid' <- placeRandomTile emptyGrid >>= placeRandomTile
-
-  loop (Just grid')
+  initialGrid <- placeRandomTile emptyGrid >>= placeRandomTile
+  case args of
+    ["-p", port] -> do
+      connect "localhost" port $ \(socket, _) -> do
+        send socket (encode (Just initialGrid))
+        socketLoop (Just initialGrid) socket
+    ["-h"] -> putStrLn "Options:\n -p <port> for game over network\n -h for help\n No arguments for local game"
+    ["-v"] -> putStrLn "Version 1.1.0" >> exitSuccess
+    _ -> loop (Just initialGrid)
