@@ -21,12 +21,12 @@
           buildTools = hp: {
             inherit (pkgs)
               treefmt;
-              
+
           } // config.treefmt.formatters;
           # overrides = self: super: {}
           hlsCheck.enable = true;
           hlintCheck.enable = true;
-        
+
 
           #haskellPackages = pkgs.haskellPackages.override {
           #  overrides = self: super: rec {
