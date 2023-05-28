@@ -9,15 +9,11 @@ import System.Random
 
 import Prelude hiding (Down, Left, Right, putStr, sum)
 
-{- |
- Main entry point.
-
- The `bin/run` script will invoke this function.
--}
+-- The game is comprised of a 4x4 grid, each tile either no value or an integer,
+-- Normally 2048 will use powers of two, to calculate the score heuristically,
+-- I save them in log2
 type Tile = Maybe Int
-
 type Grid = [[Tile]]
-
 data Move = Up | Down | Left | Right
 
 emptyGrid :: Grid
@@ -34,13 +30,13 @@ findEmptyTiles grid = do
 
 -- Insert tile into the grid given coordinates
 placeTile :: Tile -> (Int, Int) -> Grid -> Grid
-placeTile tile (row, column) grid = beforeTileRow ++ [tileRow] ++ afterTileRow
+placeTile tile (rowIdx, colIdx) grid = beforeTileRow ++ [tileRow] ++ afterTileRow
   where
-    beforeTileRow = take row grid
+    beforeTileRow = take rowIdx grid
     tileRow = beforeTileColumn ++ [tile] ++ afterTileColumn
-    afterTileRow = drop (row + 1) grid
-    beforeTileColumn = take column (grid !! row)
-    afterTileColumn = drop (column + 1) (grid !! row)
+    afterTileRow = drop (rowIdx + 1) grid
+    beforeTileColumn = take colIdx (grid !! rowIdx)
+    afterTileColumn = drop (colIdx + 1) (grid !! rowIdx)
 
 placeRandomTile :: Grid -> IO Grid
 placeRandomTile grid =
@@ -48,14 +44,15 @@ placeRandomTile grid =
         & chooseRandom
         >>= \tile -> newTileValue >>= \value -> return (placeTile (Just value) tile grid)
   where
-    -- Generate a random tile value between 2 or 4 with a 90%, 10% weight
+    -- Generate a random tile with the value 1 or 2 with a 90%, 10% distribution (using log2)
     newTileValue :: IO Int
     newTileValue = (randomRIO (1, 10) :: IO Int) >>= \n -> return (if n == 1 then 2 else 1)
 
+    -- Select a random tile in the list
     chooseRandom :: [a] -> IO a
     chooseRandom xs = randomRIO (0, length xs - 1) <&> (xs !!)
 
--- Move all tiles in a row to the left
+-- Move and merge all tiles in a row to the left
 mergeRowLeft :: [Tile] -> [Tile]
 mergeRowLeft [] = []
 mergeRowLeft (Nothing : xs) = mergeRowLeft xs ++ [Nothing]
@@ -72,17 +69,24 @@ moveBoard Right = map (reverse . mergeRowLeft . reverse)
 moveBoard Up = transpose . moveBoard Left . transpose
 moveBoard Down = transpose . moveBoard Right . transpose
 
--- Try each merge and see if any of the grids are different to the original grid
-canMerge :: Grid -> Bool
-canMerge grid = any (/= grid) (map moveBoard [Up, Down, Left, Right] <*> [grid])
-
 checkGameOver :: Grid -> IO (Maybe Grid)
 checkGameOver grid =
     if null (findEmptyTiles grid) && not (canMerge grid)
-        then putStr "Game over!" >> return Nothing
-        else return (Just grid)
 
--- refactor and rename
+        -- \r prevents last keystroke being visible
+        -- \n prevents the cursor from sitting ontop of the game after exitting
+        then putStr "\rGame over!\n" >> return Nothing
+        else return (Just grid)
+  where
+    -- Try moving in all four directions, if all moves are the same, then the game is over since
+    -- there are no legal moves left
+    canMerge :: Grid -> Bool
+    canMerge grid = any (/= grid) (map moveBoard [Up, Down, Left, Right] <*> [grid])
+
+-- This function calculates the approximate score of the game using the recurrence relation:
+-- a_n = 2a_{n-1}+2^n
+-- This is solved for the full equation and the randomly spawned 4s are acconted for with
+-- the last term of recurrentScore
 recurrentScore :: Maybe Int -> Int
 recurrentScore Nothing = 0
 -- The additional term is to account for the randomly spawned 4s
@@ -108,7 +112,7 @@ legalMoves grid = [Up, Down, Left, Right] & filter (canMove grid)
 -- Display the 4x4 grid in the terminal
 displayGrid :: Grid -> IO ()
 displayGrid grid =
-    "┌────┬────┬────┬────┐\n"
+           "┌────┬────┬────┬────┐\n"
         ++ "│"
         ++ intercalate "│" (map displayTile (grid !! 0))
         ++ "│\n"
@@ -132,17 +136,19 @@ displayGrid grid =
     -- Display a single tile
     displayTile :: Tile -> String
     displayTile Nothing = "    "
-    -- Convert log 2 of a number to number, this is needed since the game uses logarithms
+    -- Convert the log2 representation of a tile to normal linear space
     displayTile (Just n) = show (2 ^ n :: Int) ++ "   " & take 4
 
 clearScreen :: IO ()
-clearScreen = putStr "\ESC[2J"
+clearScreen = putStr "\ESC[2J" -- ANSI code for wiping the entire screen
 
+-- This functions is responsible for the game loop, it listens for an input on the keyboard,
+-- updates the state, and repeats until the game is over
 loop :: Maybe Grid -> IO ()
 loop Nothing = pass
 loop (Just grid) = do
     clearScreen
-    putStrLn "\n"
+    putStrLn "\r" 
     displayGrid grid
     input <- getChar
 
@@ -151,7 +157,9 @@ loop (Just grid) = do
         's' -> loop =<< move Down grid
         'a' -> loop =<< move Left grid
         'd' -> loop =<< move Right grid
-        'q' -> putStrLn "Bye!"
+        -- \r prevents last keystroke being visible
+        -- \n prevents the cursor from sitting ontop of the game after exitting
+        'q' -> putStrLn "\rBye!\n"
         _ -> loop (Just grid)
 
 -- Take grid which is a list of lists of tiles and convert it to a string
@@ -176,7 +184,8 @@ encode (Just grid) =
     encodeMove Down = "3"
     encodeMove Right = "4"
 
--- Variation of the loop function which is also able to connect via TCP
+-- Variation of the loop function which is also able to connect via TCP and listen for inputs
+-- with TCP instead of only just the keyboard
 socketLoop :: Maybe Grid -> Socket -> IO ()
 socketLoop Nothing _ = pass
 socketLoop (Just grid) socket = do
