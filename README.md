@@ -10,5 +10,4 @@ A simple 2048 game written in Haskell.
 -h for help  
 -p for port to run with TCP server for remote control.  
 
-![image](https://github.com/joshniemela/hs2048/assets/88747315/01a6fa4b-7e11-430f-a8d3-d9225065c047)
-
+![hs2048](https://github.com/joshniemela/hs2048/assets/88747315/bd360b6b-ba83-4c3f-a5fc-05c4808436e6)
