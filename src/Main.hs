@@ -231,5 +231,5 @@ main = do
                 send socket (encode (Just initialGrid))
                 socketLoop (Just initialGrid) socket
         ["-h"] -> putStrLn "Options:\n -p <port> for game over network\n -h for help\n No arguments for local game"
-        ["-v"] -> putStrLn "Version 1.1.0" >> exitSuccess
+        ["-v"] -> putStrLn "Version 1.1.1" >> exitSuccess
         _ -> loop (Just initialGrid)
